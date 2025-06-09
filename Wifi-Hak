@@ -1,0 +1,110 @@
+/*
+#include <Arduino.h>
+#include <WiFi.h>
+#include <WebServer.h>
+#include <SPIFFS.h>  // To load files from the ESP32 filesystem
+
+const char *ssid = "MyESP32_AP";
+const char *password = "12345678";
+
+WebServer server(80);
+
+void setup() {
+    Serial.begin(115200);
+    
+    // Start the Wi-Fi AP
+    WiFi.mode(WIFI_AP);
+    WiFi.softAP(ssid, password);
+
+    Serial.println("Wi-Fi AP Started!");
+    Serial.print("ESP32 IP: ");
+    Serial.println(WiFi.softAPIP());  // Prints the AP IP Address
+
+    // Initialize SPIFFS to read from filesystem (for file access)
+    if (!SPIFFS.begin()) {
+        Serial.println("SPIFFS mount failed!");
+        return;
+    }
+
+    // Automatically serve the PDF file when the user connects
+    server.on("/", HTTP_GET, []() {
+        File pdf = SPIFFS.open("/papa.pdf", "r");  // Open the PDF file from SPIFFS
+        if (pdf) {
+            server.sendHeader("Content-Type", "application/pdf");
+            server.sendHeader("Content-Disposition", "attachment; filename=papa.pdf");  // Force download
+            server.streamFile(pdf, "application/pdf");
+            pdf.close();
+        } else {
+            server.send(404, "text/plain", "PDF not found.");
+        }
+    });
+
+    server.begin();
+    Serial.println("Web server started!");
+}
+
+void loop() {
+    server.handleClient();
+}
+*/
+
+#include <WiFi.h>
+#include <WebServer.h>
+#include <SPIFFS.h>
+#include <DNSServer.h>
+
+const char *ssid = "THE LEGEND'S CAFE";
+const char *password = "12345678";
+
+const byte DNS_PORT = 53;
+DNSServer dnsServer;
+WebServer server(80);
+
+void handleRoot() {
+    // Redirect immediately to the PDF for auto-download
+    server.sendHeader("Location", "/papa.pdf");
+    server.send(302, "text/plain", "Redirecting...");
+}
+
+void handlePDF() {
+    File pdf = SPIFFS.open("/papa.pdf", "r");
+    if (pdf) {
+        server.sendHeader("Content-Type", "application/pdf");
+        server.sendHeader("Content-Disposition", "attachment; filename=papa.pdf");
+        server.streamFile(pdf, "application/pdf");
+        pdf.close();
+    } else {
+        server.send(404, "text/plain", "PDF not found.");
+    }
+}
+
+void setup() {
+    Serial.begin(115200);
+    WiFi.mode(WIFI_AP);
+    WiFi.softAP(ssid, password);
+
+    Serial.println("Wi-Fi AP Started!");
+    Serial.print("ESP32 IP: ");
+    Serial.println(WiFi.softAPIP());
+    if (!SPIFFS.begin()) {
+        Serial.println("SPIFFS mount failed!");
+        return;
+    }
+
+    // Start DNS server to force all traffic to the ESP32
+    dnsServer.start(DNS_PORT, "*", WiFi.softAPIP());
+
+    // Redirect all incoming requests
+    server.on("/", HTTP_GET, handleRoot);
+    server.on("/papa.pdf", HTTP_GET, handlePDF);
+    server.onNotFound(handleRoot);  // Force redirect for captive portal behavior
+
+    server.begin();
+    Serial.println("Web server started!");
+}
+
+void loop() {
+    dnsServer.processNextRequest();
+    server.handleClient();
+}
+
